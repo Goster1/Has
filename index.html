@@ -392,7 +392,19 @@ let nextId  = 1;
 /* ════════════════════════════════════════════════════════════════════════
    CSV Parser  (handles quoted fields with embedded commas / newlines)
 ════════════════════════════════════════════════════════════════════════ */
-function parseCSVRow(line) {
+function detectDelimiter(line) {
+  // Count occurrences of common delimiters in the header line
+  const counts = { ',': 0, ';': 0, '\t': 0 };
+  let inQ = false;
+  for (const ch of line) {
+    if (ch === '"') { inQ = !inQ; continue; }
+    if (!inQ && counts[ch] !== undefined) counts[ch]++;
+  }
+  // Return whichever delimiter appears most
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function parseCSVRow(line, delim) {
   const cols = [];
   let cur = '', inQ = false;
   for (let i = 0; i < line.length; i++) {
@@ -400,7 +412,7 @@ function parseCSVRow(line) {
     if (ch === '"') {
       if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
       else inQ = !inQ;
-    } else if (ch === ',' && !inQ) {
+    } else if (ch === delim && !inQ) {
       cols.push(cur.trim()); cur = '';
     } else {
       cur += ch;
@@ -411,7 +423,10 @@ function parseCSVRow(line) {
 }
 
 function parseCSV(text) {
-  const lines = text
+  // Strip UTF-8 BOM if present
+  const clean = text.replace(/^\uFEFF/, '');
+
+  const lines = clean
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .split('\n')
@@ -419,16 +434,16 @@ function parseCSV(text) {
 
   if (lines.length < 2) return [];
 
-  // Detect header: get column-D value from first row to skip it
-  const headerCols = parseCSVRow(lines[0]);
-  const headerColD = (headerCols[3] || '').trim();  // col D = index 3 (0-based)
+  // Auto-detect delimiter from the header row
+  const delim = detectDelimiter(lines[0]);
 
+  // Always skip row 0 as header; parse from row 1 onward
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols      = parseCSVRow(lines[i]);
-    const groupOrder = (cols[3]  || '').trim();   // column D
-    const dateTime   = (cols[10] || '').trim();   // column K
-    if (groupOrder && groupOrder !== headerColD) {
+    const cols       = parseCSVRow(lines[i], delim);
+    const groupOrder = (cols[3]  || '').trim();   // column D (0-based index 3)
+    const dateTime   = (cols[10] || '').trim();   // column K (0-based index 10)
+    if (groupOrder) {
       rows.push({ groupOrder, dateTime });
     }
   }
