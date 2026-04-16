@@ -392,19 +392,7 @@ let nextId  = 1;
 /* ════════════════════════════════════════════════════════════════════════
    CSV Parser  (handles quoted fields with embedded commas / newlines)
 ════════════════════════════════════════════════════════════════════════ */
-function detectDelimiter(line) {
-  // Count occurrences of common delimiters in the header line
-  const counts = { ',': 0, ';': 0, '\t': 0 };
-  let inQ = false;
-  for (const ch of line) {
-    if (ch === '"') { inQ = !inQ; continue; }
-    if (!inQ && counts[ch] !== undefined) counts[ch]++;
-  }
-  // Return whichever delimiter appears most
-  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-}
-
-function parseCSVRow(line, delim) {
+function splitRow(line, delim) {
   const cols = [];
   let cur = '', inQ = false;
   for (let i = 0; i < line.length; i++) {
@@ -423,8 +411,8 @@ function parseCSVRow(line, delim) {
 }
 
 function parseCSV(text) {
-  // Strip UTF-8 BOM if present
-  const clean = text.replace(/^\uFEFF/, '');
+  // Strip UTF-8 / UTF-16 BOM
+  const clean = text.replace(/^(\uFEFF|\uFFFE)/, '');
 
   const lines = clean
     .replace(/\r\n/g, '\n')
@@ -432,22 +420,26 @@ function parseCSV(text) {
     .split('\n')
     .filter(l => l.trim().length > 0);
 
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { rows: [], delim: '?', colCount: 0, lineCount: lines.length };
 
-  // Auto-detect delimiter from the header row
-  const delim = detectDelimiter(lines[0]);
+  // ── Pick delimiter: whichever splits the header into the MOST columns ──
+  const candidates = ['\t', ';', ',', '|'];
+  let bestDelim = ',', bestCount = 1;
+  for (const d of candidates) {
+    const n = splitRow(lines[0], d).length;
+    if (n > bestCount) { bestCount = n; bestDelim = d; }
+  }
 
-  // Always skip row 0 as header; parse from row 1 onward
+  // ── Parse data rows (skip row 0 = header) ──────────────────────────────
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols       = parseCSVRow(lines[i], delim);
+    const cols       = splitRow(lines[i], bestDelim);
     const groupOrder = (cols[3]  || '').trim();   // column D (0-based index 3)
     const dateTime   = (cols[10] || '').trim();   // column K (0-based index 10)
-    if (groupOrder) {
-      rows.push({ groupOrder, dateTime });
-    }
+    if (groupOrder) rows.push({ groupOrder, dateTime });
   }
-  return rows;
+
+  return { rows, delim: bestDelim, colCount: bestCount, lineCount: lines.length };
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -497,8 +489,14 @@ function renderCards() {
 
     if (f.rows) {
       // Loaded state
+      const delimName = f.delim === '\t' ? 'TAB' : (f.delim || '?');
+      const warn = f.rows.length === 0
+        ? `<div style="color:#a4262c;font-size:11px;margin-top:6px">
+             ⚠ 0 rows extracted — delimiter: [${delimName}], cols in header: ${f.colCount}, lines: ${f.lineCount}
+           </div>`
+        : '';
       const preview = f.rows.slice(0, 3)
-        .map(r => `<b>${r.groupOrder}</b> — ${r.dateTime || '—'}`)
+        .map(r => `<b>${escHtml(r.groupOrder)}</b> — ${escHtml(r.dateTime) || '—'}`)
         .join('<br>');
       card.innerHTML = `
         <span class="card-badge">FILE ${f.label}</span>
@@ -506,17 +504,19 @@ function renderCards() {
         <div class="card-stats">
           <div><span>${f.rows.length}</span> data rows</div>
           <div><span>${new Set(f.rows.map(r => r.groupOrder)).size}</span> unique orders</div>
+          <div style="opacity:.6">sep: <b>${delimName}</b></div>
         </div>
-        <div class="card-preview">${preview}${f.rows.length > 3 ? '<br>…' : ''}</div>
+        ${warn}
+        <div class="card-preview">${preview || '<i style="opacity:.5">no data rows found</i>'}${f.rows.length > 3 ? '<br>…' : ''}</div>
         <button class="card-remove-btn" data-id="${f.id}" title="Remove file">✕</button>
       `;
     } else {
-      // Empty state — clickable upload zone
+      // Empty state — accept=* so Android shows all files including .csv
       card.innerHTML = `
-        <input type="file" accept=".csv,.txt" data-id="${f.id}" />
+        <input type="file" accept="*" data-id="${f.id}" />
         <div class="upload-icon">📂</div>
         <div class="upload-label"><b>FILE ${f.label}</b></div>
-        <div class="upload-sub">Click or drag &amp; drop a CSV file</div>
+        <div class="upload-sub">Tap to pick any CSV / text file</div>
         ${files.length > 2
           ? `<button class="card-remove-btn" data-id="${f.id}" title="Remove slot">✕</button>`
           : ''}
@@ -557,19 +557,34 @@ function loadFile(id, file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const rows = parseCSV(e.target.result);
-    const entry = files.find(f => String(f.id) === String(id));
+    const result = parseCSV(e.target.result);
+    const entry  = files.find(f => String(f.id) === String(id));
     if (entry) {
-      entry.name = file.name;
-      entry.rows = rows;
+      entry.name     = file.name;
+      entry.rows     = result.rows;
+      entry.delim    = result.delim;
+      entry.colCount = result.colCount;
+      entry.lineCount= result.lineCount;
       renderCards();
-      showStatus(
-        `"${file.name}" loaded — ${rows.length} data rows extracted.`,
-        'success'
-      );
+      if (result.rows.length === 0) {
+        const delimName = result.delim === '\t' ? 'TAB' : result.delim;
+        showStatus(
+          `"${file.name}" loaded but 0 rows extracted. ` +
+          `Detected delimiter: [${delimName}], header columns: ${result.colCount}, total lines: ${result.lineCount}. ` +
+          `Check that column D and K exist in your file.`,
+          'error'
+        );
+      } else {
+        const delimName = result.delim === '\t' ? 'TAB' : result.delim;
+        showStatus(
+          `"${file.name}" loaded — ${result.rows.length} rows · delimiter: ${delimName} · ${result.colCount} columns`,
+          'success'
+        );
+      }
     }
   };
-  reader.readAsText(file);
+  reader.onerror = () => showStatus(`Failed to read "${file.name}". Try a different file.`, 'error');
+  reader.readAsText(file, 'UTF-8');
 }
 
 function removeFile(id) {
@@ -594,20 +609,6 @@ function relabelFiles() {
 function addSlot() {
   files.push({ id: nextId++, label: files.length + 1, name: null, rows: null });
   renderCards();
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   Find matches
-════════════════════════════════════════════════════════════════════════ */
-function runMatch() {
-  const loaded = files.filter(f => f.rows && f.rows.length > 0);
-  if (loaded.length < 2) {
-    showStatus('Please upload at least 2 CSV files before searching.', 'error');
-    return;
-  }
-
-  matches = findMatches(loaded);
-  renderResults(loaded);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -718,6 +719,16 @@ function exportCSV() {
 function updateFindBtn() {
   const loaded = files.filter(f => f.rows && f.rows.length > 0).length;
   document.getElementById('findBtn').disabled = loaded < 2;
+}
+
+function runMatch() {
+  const loaded = files.filter(f => f.rows && f.rows.length > 0);
+  if (loaded.length < 2) {
+    showStatus('Please upload at least 2 CSV files with data rows before searching.', 'error');
+    return;
+  }
+  matches = findMatches(loaded);
+  renderResults(loaded);
 }
 
 function showStatus(msg, type) {
