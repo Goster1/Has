@@ -504,7 +504,7 @@ function renderCards() {
         <div class="card-stats">
           <div><span>${f.rows.length}</span> data rows</div>
           <div><span>${new Set(f.rows.map(r => r.groupOrder)).size}</span> unique orders</div>
-          <div style="opacity:.6">sep: <b>${delimName}</b></div>
+          <div style="opacity:.6">sep: <b>${delimName}</b> · ${f.encoding || ''}</div>
         </div>
         ${warn}
         <div class="card-preview">${preview || '<i style="opacity:.5">no data rows found</i>'}${f.rows.length > 3 ? '<br>…' : ''}</div>
@@ -553,11 +553,34 @@ function renderCards() {
 /* ════════════════════════════════════════════════════════════════════════
    File loading
 ════════════════════════════════════════════════════════════════════════ */
+function decodeFile(buffer) {
+  const bytes = new Uint8Array(buffer);
+  // Detect encoding from BOM (Byte Order Mark)
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+    return { text: new TextDecoder('utf-16le').decode(buffer), encoding: 'UTF-16 LE' };
+  }
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    return { text: new TextDecoder('utf-16be').decode(buffer), encoding: 'UTF-16 BE' };
+  }
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return { text: new TextDecoder('utf-8').decode(buffer), encoding: 'UTF-8 BOM' };
+  }
+  // No BOM — check for UTF-16 LE without BOM (null bytes at odd positions)
+  let nullsAtOdd = 0;
+  const check = Math.min(bytes.length, 200);
+  for (let i = 1; i < check; i += 2) { if (bytes[i] === 0) nullsAtOdd++; }
+  if (nullsAtOdd > check / 4) {
+    return { text: new TextDecoder('utf-16le').decode(buffer), encoding: 'UTF-16 LE (no BOM)' };
+  }
+  return { text: new TextDecoder('utf-8').decode(buffer), encoding: 'UTF-8' };
+}
+
 function loadFile(id, file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    const result = parseCSV(e.target.result);
+    const { text, encoding } = decodeFile(e.target.result);
+    const result = parseCSV(text);
     const entry  = files.find(f => String(f.id) === String(id));
     if (entry) {
       entry.name     = file.name;
@@ -565,26 +588,27 @@ function loadFile(id, file) {
       entry.delim    = result.delim;
       entry.colCount = result.colCount;
       entry.lineCount= result.lineCount;
+      entry.encoding = encoding;
       renderCards();
       if (result.rows.length === 0) {
         const delimName = result.delim === '\t' ? 'TAB' : result.delim;
         showStatus(
-          `"${file.name}" loaded but 0 rows extracted. ` +
-          `Detected delimiter: [${delimName}], header columns: ${result.colCount}, total lines: ${result.lineCount}. ` +
-          `Check that column D and K exist in your file.`,
+          `"${file.name}" — 0 rows extracted. ` +
+          `Encoding: ${encoding}, delimiter: [${delimName}], ` +
+          `header columns: ${result.colCount}, total lines: ${result.lineCount}.`,
           'error'
         );
       } else {
         const delimName = result.delim === '\t' ? 'TAB' : result.delim;
         showStatus(
-          `"${file.name}" loaded — ${result.rows.length} rows · delimiter: ${delimName} · ${result.colCount} columns`,
+          `"${file.name}" loaded — ${result.rows.length} rows · ${encoding} · delimiter: ${delimName} · ${result.colCount} columns`,
           'success'
         );
       }
     }
   };
-  reader.onerror = () => showStatus(`Failed to read "${file.name}". Try a different file.`, 'error');
-  reader.readAsText(file, 'UTF-8');
+  reader.onerror = () => showStatus(`Failed to read "${file.name}".`, 'error');
+  reader.readAsArrayBuffer(file);
 }
 
 function removeFile(id) {
