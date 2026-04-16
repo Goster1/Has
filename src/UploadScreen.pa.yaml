@@ -1,15 +1,15 @@
 ##
 ## Screen: UploadScreen
-## Purpose : Upload / paste two or more CSV files, extract columns D & K,
+## Purpose : Upload / paste two or more TSV files, extract columns D & K,
 ##           find matching group-order numbers and navigate to ResultsScreen.
 ##
-## CSV column mapping
+## CSV column mapping (tab-separated, Char(9) = TAB)
 ##   Column D  (4th  column, index 4)  →  Group Order Number
-##   Column K  (11th column, index 11) →  Date / Time
+##   Column K  (11th column, index 11) →  Date / Time (Created)
 ##
 ## Power Fx helper used throughout
-##   ColDValue(row)  = Trim( Last( FirstN( Split(row, ","), 4  ) ).Value )
-##   ColKValue(row)  = Trim( Last( FirstN( Split(row, ","), 11 ) ).Value )
+##   ColDValue(row)  = Trim( Last( FirstN( Split(row, Char(9)), 4  ) ).Value )
+##   ColKValue(row)  = Trim( Last( FirstN( Split(row, Char(9)), 11 ) ).Value )
 ##
 
 - UploadScreen:
@@ -152,10 +152,10 @@
           Width: =(Parent.Width / 2) - 24
           Height: =Parent.Height - 272
           Mode: =TextInputMode.MultiLine
-          HintText: ="Paste your CSV content here…
-Example row:
-TXN001,WH-A,PRD-100,ORD-1001,50,Units,Ops,High,OpName,Morning,2024-03-15 08:30:00,Notes
-                      ↑ Col D                              ↑ Col K"
+          HintText: ="Paste your TSV (tab-separated) content here…
+Example row (columns separated by TAB):
+5153126  [TAB] T000001893 [TAB] T000001893 [TAB] 78401378 [TAB] … [TAB] 4/2/2026 11:27 PM
+                                                  ↑ Col D                ↑ Col K (Created)"
           BorderColor: =RGBA(210, 220, 230, 1)
           FocusedBorderColor: =RGBA(0, 120, 212, 1)
           BorderThickness: =1
@@ -239,7 +239,7 @@ TXN001,WH-A,PRD-100,ORD-1001,50,Units,Ops,High,OpName,Morning,2024-03-15 08:30:0
           Width: =(Parent.Width / 2) - 24
           Height: =Parent.Height - 272
           Mode: =TextInputMode.MultiLine
-          HintText: ="Paste your CSV content here…"
+          HintText: ="Paste your TSV (tab-separated) content here…"
           BorderColor: =RGBA(210, 220, 230, 1)
           FocusedBorderColor: =RGBA(0, 120, 212, 1)
           BorderThickness: =1
@@ -325,9 +325,9 @@ TXN001,WH-A,PRD-100,ORD-1001,50,Units,Ops,High,OpName,Morning,2024-03-15 08:30:0
                     colRows1,
                     Filter(Split(varRaw1, Char(10)), Len(Value) > 0)
                 );
-                // Detect header value in column D to exclude it
+                // Detect header value in column D (tab-separated) to exclude it
                 Set(varHeader1ColD,
-                    Trim(Last(FirstN(Split(First(colRows1).Value, ","), 4)).Value)
+                    Trim(Last(FirstN(Split(First(colRows1).Value, Char(9)), 4)).Value)
                 );
                 // Parse every row → extract ColD (index 4) and ColK (index 11)
                 ClearCollect(
@@ -335,14 +335,14 @@ TXN001,WH-A,PRD-100,ORD-1001,50,Units,Ops,High,OpName,Morning,2024-03-15 08:30:0
                     ForAll(
                         Filter(
                             colRows1,
-                            // Skip header
-                            Trim(Last(FirstN(Split(Value, ","), 4)).Value) <> varHeader1ColD
+                            // Skip header row
+                            Trim(Last(FirstN(Split(Value, Char(9)), 4)).Value) <> varHeader1ColD
                             // Skip blank column D
-                            && Len(Trim(Last(FirstN(Split(Value, ","), 4)).Value)) > 0
+                            && Len(Trim(Last(FirstN(Split(Value, Char(9)), 4)).Value)) > 0
                         ),
                         {
-                            GroupOrder: Trim(Last(FirstN(Split(Value, ","), 4)).Value),
-                            DateTime:   Trim(Last(FirstN(Split(Value, ","), 11)).Value),
+                            GroupOrder: Trim(Last(FirstN(Split(Value, Char(9)), 4)).Value),
+                            DateTime:   Trim(Last(FirstN(Split(Value, Char(9)), 11)).Value),
                             Source:     "File 1"
                         }
                     )
@@ -362,19 +362,19 @@ TXN001,WH-A,PRD-100,ORD-1001,50,Units,Ops,High,OpName,Morning,2024-03-15 08:30:0
                     Filter(Split(varRaw2, Char(10)), Len(Value) > 0)
                 );
                 Set(varHeader2ColD,
-                    Trim(Last(FirstN(Split(First(colRows2).Value, ","), 4)).Value)
+                    Trim(Last(FirstN(Split(First(colRows2).Value, Char(9)), 4)).Value)
                 );
                 ClearCollect(
                     colFile2Data,
                     ForAll(
                         Filter(
                             colRows2,
-                            Trim(Last(FirstN(Split(Value, ","), 4)).Value) <> varHeader2ColD
-                            && Len(Trim(Last(FirstN(Split(Value, ","), 4)).Value)) > 0
+                            Trim(Last(FirstN(Split(Value, Char(9)), 4)).Value) <> varHeader2ColD
+                            && Len(Trim(Last(FirstN(Split(Value, Char(9)), 4)).Value)) > 0
                         ),
                         {
-                            GroupOrder: Trim(Last(FirstN(Split(Value, ","), 4)).Value),
-                            DateTime:   Trim(Last(FirstN(Split(Value, ","), 11)).Value),
+                            GroupOrder: Trim(Last(FirstN(Split(Value, Char(9)), 4)).Value),
+                            DateTime:   Trim(Last(FirstN(Split(Value, Char(9)), 11)).Value),
                             Source:     "File 2"
                         }
                     )
