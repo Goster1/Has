@@ -211,7 +211,7 @@
       border-radius: var(--radius-sm);
       flex: 1; min-width: 200px;
     }
-    .status-msg.error   { background: var(--error-light);   color: var(--error);   }
+    .status-msg.error   { background: var(--error-light);   color: var(--error); white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 11px; }
     .status-msg.success { background: var(--success-light); color: var(--success); }
     .status-msg.info    { background: var(--primary-light); color: var(--primary); }
 
@@ -430,6 +430,18 @@ function parseCSV(text) {
     if (n > bestCount) { bestCount = n; bestDelim = d; }
   }
 
+  // ── Debug: first 120 chars with control codes shown ───────────────────
+  let rawDump = '';
+  for (let i = 0; i < Math.min(clean.length, 120); i++) {
+    const c = clean.charCodeAt(i);
+    if      (c ===  9) rawDump += '⇥';      // TAB
+    else if (c === 10) rawDump += '↵';      // LF
+    else if (c === 13) rawDump += '↩';      // CR
+    else if (c ===  0) rawDump += '∅';      // NULL
+    else if (c < 32)   rawDump += `[${c}]`;
+    else               rawDump += clean[i];
+  }
+
   // ── Parse data rows (skip row 0 = header) ──────────────────────────────
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
@@ -439,7 +451,7 @@ function parseCSV(text) {
     if (groupOrder) rows.push({ groupOrder, dateTime });
   }
 
-  return { rows, delim: bestDelim, colCount: bestCount, lineCount: lines.length };
+  return { rows, delim: bestDelim, colCount: bestCount, lineCount: lines.length, rawDump };
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -594,8 +606,9 @@ function loadFile(id, file) {
         const delimName = result.delim === '\t' ? 'TAB' : result.delim;
         showStatus(
           `"${file.name}" — 0 rows extracted. ` +
-          `Encoding: ${encoding}, delimiter: [${delimName}], ` +
-          `header columns: ${result.colCount}, total lines: ${result.lineCount}.`,
+          `Encoding: ${encoding} · delimiter: [${delimName}] · ` +
+          `header cols: ${result.colCount} · lines: ${result.lineCount}\n` +
+          `RAW START: ${result.rawDump}`,
           'error'
         );
       } else {
