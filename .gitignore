@@ -1,0 +1,12 @@
+# Power Apps build output
+*.msapp
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.swp
+*~

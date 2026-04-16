@@ -1,0 +1,245 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "_comment": [
+    "Power Automate Flow: Parse CSV Files for CSV Group Order Matcher",
+    "",
+    "PURPOSE",
+    "  This flow is an OPTIONAL enhancement. It lets Power Apps send raw CSV",
+    "  file content (as a base64 string from the Attachments control) and",
+    "  receive back structured JSON with GroupOrder (col D) and DateTime (col K).",
+    "",
+    "HOW TO IMPORT",
+    "  1. Open Power Automate (make.powerautomate.com)",
+    "  2. My Flows → Import → Import Package (.zip)",
+    "     (wrap this JSON in a zip following the PA export format, or copy the",
+    "      definition into a new 'Instant cloud flow' triggered by PowerApps)",
+    "  3. In Power Apps, add this flow via the 'Power Automate' pane and call it",
+    "     from the FindMatchesBtn.OnSelect formula (see inline comment below).",
+    "",
+    "CONNECTING THE FLOW TO THE APP",
+    "  In FindMatchesBtn.OnSelect, REPLACE the inline CSV parsing block with:",
+    "",
+    "    Set(varFile1Result, ParseCSVFlow.Run(CSV1TextInput.Text, 'File 1'));",
+    "    Set(varFile2Result, ParseCSVFlow.Run(CSV2TextInput.Text, 'File 2'));",
+    "    ClearCollect(colFile1Data, varFile1Result.parsedrows);",
+    "    ClearCollect(colFile2Data, varFile2Result.parsedrows);",
+    "",
+    "  The rest of the matching logic remains identical."
+  ],
+  "triggers": {
+    "manual": {
+      "type": "Request",
+      "kind": "PowerAppV2",
+      "inputs": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "csvContent": {
+              "title": "csvContent",
+              "description": "Full text content of the CSV file (plain text, NOT base64)",
+              "type": "string",
+              "x-ms-dynamically-added": true
+            },
+            "sourceName": {
+              "title": "sourceName",
+              "description": "Label for this file, e.g. 'File 1' or 'File 2'",
+              "type": "string",
+              "x-ms-dynamically-added": true
+            }
+          },
+          "required": ["csvContent", "sourceName"]
+        }
+      }
+    }
+  },
+  "actions": {
+    "Initialize_Rows": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "parsedRows",
+            "type": "array",
+            "value": []
+          }
+        ]
+      },
+      "runAfter": {}
+    },
+    "Initialize_HeaderColD": {
+      "type": "InitializeVariable",
+      "inputs": {
+        "variables": [
+          {
+            "name": "headerColD",
+            "type": "string",
+            "value": ""
+          }
+        ]
+      },
+      "runAfter": {
+        "Initialize_Rows": ["Succeeded"]
+      }
+    },
+    "Normalize_Line_Endings": {
+      "type": "Compose",
+      "inputs": "@replace(replace(triggerBody()['csvContent'], '\r\n', '\n'), '\r', '\n')",
+      "runAfter": {
+        "Initialize_HeaderColD": ["Succeeded"]
+      }
+    },
+    "Split_Into_Rows": {
+      "type": "Compose",
+      "inputs": "@split(outputs('Normalize_Line_Endings'), '\n')",
+      "runAfter": {
+        "Normalize_Line_Endings": ["Succeeded"]
+      }
+    },
+    "For_Each_Row": {
+      "type": "Foreach",
+      "foreach": "@outputs('Split_Into_Rows')",
+      "actions": {
+        "Skip_Empty_Rows": {
+          "type": "Condition",
+          "expression": {
+            "and": [
+              {
+                "greater": [
+                  "@length(trim(item()))",
+                  0
+                ]
+              }
+            ]
+          },
+          "actions": {
+            "Split_Row_By_Comma": {
+              "type": "Compose",
+              "inputs": "@split(item(), ',')"
+            },
+            "Check_Column_Count": {
+              "type": "Condition",
+              "expression": {
+                "and": [
+                  {
+                    "greaterOrEquals": [
+                      "@length(outputs('Split_Row_By_Comma'))",
+                      11
+                    ]
+                  }
+                ]
+              },
+              "actions": {
+                "Extract_ColD": {
+                  "type": "Compose",
+                  "inputs": "@trim(outputs('Split_Row_By_Comma')[3])"
+                },
+                "Extract_ColK": {
+                  "type": "Compose",
+                  "inputs": "@trim(outputs('Split_Row_By_Comma')[10])"
+                },
+                "Set_Header_If_First_Row": {
+                  "type": "Condition",
+                  "expression": {
+                    "and": [
+                      {
+                        "equals": [
+                          "@variables('headerColD')",
+                          ""
+                        ]
+                      }
+                    ]
+                  },
+                  "actions": {
+                    "Capture_Header": {
+                      "type": "SetVariable",
+                      "inputs": {
+                        "name": "headerColD",
+                        "value": "@outputs('Extract_ColD')"
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Skip_If_Header_Value": {
+                        "type": "Condition",
+                        "expression": {
+                          "and": [
+                            {
+                              "not": {
+                                "equals": [
+                                  "@outputs('Extract_ColD')",
+                                  "@variables('headerColD')"
+                                ]
+                              }
+                            },
+                            {
+                              "greater": [
+                                "@length(outputs('Extract_ColD'))",
+                                0
+                              ]
+                            }
+                          ]
+                        },
+                        "actions": {
+                          "Append_To_parsedRows": {
+                            "type": "AppendToArrayVariable",
+                            "inputs": {
+                              "name": "parsedRows",
+                              "value": {
+                                "GroupOrder": "@outputs('Extract_ColD')",
+                                "DateTime": "@outputs('Extract_ColK')",
+                                "Source": "@triggerBody()['sourceName']"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Split_Into_Rows": ["Succeeded"]
+      }
+    },
+    "Respond_to_PowerApps": {
+      "type": "Response",
+      "kind": "PowerApp",
+      "inputs": {
+        "statusCode": 200,
+        "body": {
+          "parsedrows": "@variables('parsedRows')",
+          "rowcount": "@length(variables('parsedRows'))",
+          "sourcename": "@triggerBody()['sourceName']"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "parsedrows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "GroupOrder": {"type": "string"},
+                  "DateTime":   {"type": "string"},
+                  "Source":     {"type": "string"}
+                }
+              }
+            },
+            "rowcount":   {"type": "integer"},
+            "sourcename": {"type": "string"}
+          }
+        }
+      },
+      "runAfter": {
+        "For_Each_Row": ["Succeeded"]
+      }
+    }
+  },
+  "outputs": {}
+}

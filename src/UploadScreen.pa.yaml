@@ -1,0 +1,430 @@
+##
+## Screen: UploadScreen
+## Purpose : Upload / paste two or more CSV files, extract columns D & K,
+##           find matching group-order numbers and navigate to ResultsScreen.
+##
+## CSV column mapping
+##   Column D  (4th  column, index 4)  →  Group Order Number
+##   Column K  (11th column, index 11) →  Date / Time
+##
+## Power Fx helper used throughout
+##   ColDValue(row)  = Trim( Last( FirstN( Split(row, ","), 4  ) ).Value )
+##   ColKValue(row)  = Trim( Last( FirstN( Split(row, ","), 11 ) ).Value )
+##
+
+- UploadScreen:
+    Control: Screen
+    Properties:
+      Fill: =RGBA(245, 247, 250, 1)
+    Children:
+
+    ## ── Header bar ────────────────────────────────────────────────────────────
+    - HeaderRect:
+        Control: Rectangle
+        Properties:
+          X: =0
+          Y: =0
+          Width: =Parent.Width
+          Height: =64
+          Fill: =RGBA(0, 120, 212, 1)
+
+    - AppTitleLabel:
+        Control: Label
+        Properties:
+          X: =20
+          Y: =0
+          Width: =Parent.Width - 200
+          Height: =64
+          Text: ="CSV Group Order Matcher"
+          Color: =RGBA(255, 255, 255, 1)
+          Size: =22
+          FontWeight: =FontWeight.Bold
+          VerticalAlign: =VerticalAlign.Middle
+          PaddingLeft: =8
+
+    - VersionLabel:
+        Control: Label
+        Properties:
+          X: =Parent.Width - 180
+          Y: =0
+          Width: =160
+          Height: =64
+          Text: ="Columns D & K  •  v1.0"
+          Color: =RGBA(200, 230, 255, 1)
+          Size: =11
+          VerticalAlign: =VerticalAlign.Middle
+          Align: =Align.Right
+
+    ## ── Instruction banner ────────────────────────────────────────────────────
+    - InstructionBanner:
+        Control: Rectangle
+        Properties:
+          X: =0
+          Y: =64
+          Width: =Parent.Width
+          Height: =36
+          Fill: =RGBA(224, 239, 255, 1)
+
+    - InstructionLabel:
+        Control: Label
+        Properties:
+          X: =20
+          Y: =64
+          Width: =Parent.Width - 40
+          Height: =36
+          Text: ="Paste CSV content below (column D = Group Order Number  |  column K = Date & Time). Header row is skipped automatically."
+          Color: =RGBA(0, 80, 160, 1)
+          Size: =12
+          VerticalAlign: =VerticalAlign.Middle
+
+    ## ── File 1 panel ──────────────────────────────────────────────────────────
+    - File1PanelRect:
+        Control: Rectangle
+        Properties:
+          X: =16
+          Y: =112
+          Width: =(Parent.Width / 2) - 24
+          Height: =Parent.Height - 212
+          Fill: =RGBA(255, 255, 255, 1)
+          BorderColor: =RGBA(210, 220, 230, 1)
+          BorderThickness: =1
+
+    - File1HeaderRect:
+        Control: Rectangle
+        Properties:
+          X: =16
+          Y: =112
+          Width: =(Parent.Width / 2) - 24
+          Height: =40
+          Fill: =RGBA(0, 120, 212, 1)
+
+    - File1Label:
+        Control: Label
+        Properties:
+          X: =24
+          Y: =116
+          Width: =(Parent.Width / 2) - 60
+          Height: =32
+          Text: ="File 1 — Paste CSV here"
+          Color: =RGBA(255, 255, 255, 1)
+          Size: =14
+          FontWeight: =FontWeight.Bold
+          VerticalAlign: =VerticalAlign.Middle
+
+    - File1RowCountLabel:
+        Control: Label
+        Properties:
+          X: =(Parent.Width / 2) - 80
+          Y: =116
+          Width: =64
+          Height: =32
+          Text: =If(varFile1RowCount > 0, Text(varFile1RowCount) & " rows", "")
+          Color: =RGBA(200, 230, 255, 1)
+          Size: =11
+          VerticalAlign: =VerticalAlign.Middle
+          Align: =Align.Right
+
+    - File1ClearBtn:
+        Control: Button
+        Properties:
+          X: =(Parent.Width / 2) - 40
+          Y: =118
+          Width: =28
+          Height: =28
+          Text: ="✕"
+          Color: =RGBA(255, 255, 255, 1)
+          Fill: =RGBA(0, 0, 0, 0)
+          HoverFill: =RGBA(255, 255, 255, 20)
+          BorderColor: =RGBA(0, 0, 0, 0)
+          FontWeight: =FontWeight.Bold
+          Size: =14
+          OnSelect: |-
+            =UpdateContext({locClear1: true});
+            Set(varFile1RowCount, 0);
+            ClearCollect(colFile1Data, []);
+            UpdateContext({locClear1: false})
+
+    - CSV1TextInput:
+        Control: TextInput
+        Properties:
+          X: =16
+          Y: =152
+          Width: =(Parent.Width / 2) - 24
+          Height: =Parent.Height - 272
+          Mode: =TextInputMode.MultiLine
+          HintText: ="Paste your CSV content here…
+Example row:
+TXN001,WH-A,PRD-100,ORD-1001,50,Units,Ops,High,OpName,Morning,2024-03-15 08:30:00,Notes
+                      ↑ Col D                              ↑ Col K"
+          BorderColor: =RGBA(210, 220, 230, 1)
+          FocusedBorderColor: =RGBA(0, 120, 212, 1)
+          BorderThickness: =1
+          Size: =12
+          Font: =Font.'Courier New'
+          PaddingTop: =8
+          PaddingLeft: =8
+
+    ## ── File 2 panel ──────────────────────────────────────────────────────────
+    - File2PanelRect:
+        Control: Rectangle
+        Properties:
+          X: =(Parent.Width / 2) + 8
+          Y: =112
+          Width: =(Parent.Width / 2) - 24
+          Height: =Parent.Height - 212
+          Fill: =RGBA(255, 255, 255, 1)
+          BorderColor: =RGBA(210, 220, 230, 1)
+          BorderThickness: =1
+
+    - File2HeaderRect:
+        Control: Rectangle
+        Properties:
+          X: =(Parent.Width / 2) + 8
+          Y: =112
+          Width: =(Parent.Width / 2) - 24
+          Height: =40
+          Fill: =RGBA(0, 120, 212, 1)
+
+    - File2Label:
+        Control: Label
+        Properties:
+          X: =(Parent.Width / 2) + 16
+          Y: =116
+          Width: =(Parent.Width / 2) - 60
+          Height: =32
+          Text: ="File 2 — Paste CSV here"
+          Color: =RGBA(255, 255, 255, 1)
+          Size: =14
+          FontWeight: =FontWeight.Bold
+          VerticalAlign: =VerticalAlign.Middle
+
+    - File2RowCountLabel:
+        Control: Label
+        Properties:
+          X: =Parent.Width - 88
+          Y: =116
+          Width: =64
+          Height: =32
+          Text: =If(varFile2RowCount > 0, Text(varFile2RowCount) & " rows", "")
+          Color: =RGBA(200, 230, 255, 1)
+          Size: =11
+          VerticalAlign: =VerticalAlign.Middle
+          Align: =Align.Right
+
+    - File2ClearBtn:
+        Control: Button
+        Properties:
+          X: =Parent.Width - 40
+          Y: =118
+          Width: =28
+          Height: =28
+          Text: ="✕"
+          Color: =RGBA(255, 255, 255, 1)
+          Fill: =RGBA(0, 0, 0, 0)
+          HoverFill: =RGBA(255, 255, 255, 20)
+          BorderColor: =RGBA(0, 0, 0, 0)
+          FontWeight: =FontWeight.Bold
+          Size: =14
+          OnSelect: |-
+            =UpdateContext({locClear2: true});
+            Set(varFile2RowCount, 0);
+            ClearCollect(colFile2Data, []);
+            UpdateContext({locClear2: false})
+
+    - CSV2TextInput:
+        Control: TextInput
+        Properties:
+          X: =(Parent.Width / 2) + 8
+          Y: =152
+          Width: =(Parent.Width / 2) - 24
+          Height: =Parent.Height - 272
+          Mode: =TextInputMode.MultiLine
+          HintText: ="Paste your CSV content here…"
+          BorderColor: =RGBA(210, 220, 230, 1)
+          FocusedBorderColor: =RGBA(0, 120, 212, 1)
+          BorderThickness: =1
+          Size: =12
+          Font: =Font.'Courier New'
+          PaddingTop: =8
+          PaddingLeft: =8
+
+    ## ── Bottom action bar ─────────────────────────────────────────────────────
+    - BottomBarRect:
+        Control: Rectangle
+        Properties:
+          X: =0
+          Y: =Parent.Height - 96
+          Width: =Parent.Width
+          Height: =96
+          Fill: =RGBA(255, 255, 255, 1)
+          BorderColor: =RGBA(210, 220, 230, 1)
+          BorderThickness: =1
+
+    - StatusLabel:
+        Control: Label
+        Properties:
+          X: =20
+          Y: =Parent.Height - 90
+          Width: =Parent.Width - 320
+          Height: =84
+          Text: =varStatusMessage
+          Color: =If(varStatusIsError, RGBA(164, 38, 44, 1), RGBA(80, 90, 100, 1))
+          Size: =12
+          VerticalAlign: =VerticalAlign.Middle
+          Wrap: =true
+
+    - FindMatchesBtn:
+        Control: Button
+        Properties:
+          X: =Parent.Width - 296
+          Y: =Parent.Height - 76
+          Width: =280
+          Height: =52
+          Text: ="Find Matching Orders"
+          Color: =RGBA(255, 255, 255, 1)
+          Fill: =If(
+              Len(Trim(CSV1TextInput.Text)) > 0 && Len(Trim(CSV2TextInput.Text)) > 0,
+              RGBA(0, 120, 212, 1),
+              RGBA(160, 170, 180, 1)
+            )
+          HoverFill: =RGBA(0, 90, 160, 1)
+          PressedFill: =RGBA(0, 60, 120, 1)
+          FontWeight: =FontWeight.Bold
+          Size: =16
+          BorderColor: =RGBA(0, 0, 0, 0)
+          RadiusTopLeft: =6
+          RadiusTopRight: =6
+          RadiusBottomLeft: =6
+          RadiusBottomRight: =6
+          ## ── Core parsing & matching logic ────────────────────────────────────
+          OnSelect: |-
+            =// ── Guard: both panels must have content ─────────────────────────────
+            If(
+                Len(Trim(CSV1TextInput.Text)) = 0 || Len(Trim(CSV2TextInput.Text)) = 0,
+
+                // Show error and stop
+                Set(varStatusIsError, true);
+                Set(varStatusMessage, "Please paste CSV content in BOTH panels before processing."),
+
+                // ── Begin processing ─────────────────────────────────────────────
+                Set(varStatusIsError, false);
+                Set(varStatusMessage, "Processing…");
+                Set(varProcessing, true);
+
+                // ── PARSE FILE 1 ─────────────────────────────────────────────────
+                // Normalise line endings (\r\n and \r → \n)
+                Set(
+                    varRaw1,
+                    Substitute(
+                        Substitute(CSV1TextInput.Text, Char(13) & Char(10), Char(10)),
+                        Char(13), Char(10)
+                    )
+                );
+                // Collect all non-empty rows (split by \n)
+                ClearCollect(
+                    colRows1,
+                    Filter(Split(varRaw1, Char(10)), Len(Value) > 0)
+                );
+                // Detect header value in column D to exclude it
+                Set(varHeader1ColD,
+                    Trim(Last(FirstN(Split(First(colRows1).Value, ","), 4)).Value)
+                );
+                // Parse every row → extract ColD (index 4) and ColK (index 11)
+                ClearCollect(
+                    colFile1Data,
+                    ForAll(
+                        Filter(
+                            colRows1,
+                            // Skip header
+                            Trim(Last(FirstN(Split(Value, ","), 4)).Value) <> varHeader1ColD
+                            // Skip blank column D
+                            && Len(Trim(Last(FirstN(Split(Value, ","), 4)).Value)) > 0
+                        ),
+                        {
+                            GroupOrder: Trim(Last(FirstN(Split(Value, ","), 4)).Value),
+                            DateTime:   Trim(Last(FirstN(Split(Value, ","), 11)).Value),
+                            Source:     "File 1"
+                        }
+                    )
+                );
+                Set(varFile1RowCount, CountRows(colFile1Data));
+
+                // ── PARSE FILE 2 ─────────────────────────────────────────────────
+                Set(
+                    varRaw2,
+                    Substitute(
+                        Substitute(CSV2TextInput.Text, Char(13) & Char(10), Char(10)),
+                        Char(13), Char(10)
+                    )
+                );
+                ClearCollect(
+                    colRows2,
+                    Filter(Split(varRaw2, Char(10)), Len(Value) > 0)
+                );
+                Set(varHeader2ColD,
+                    Trim(Last(FirstN(Split(First(colRows2).Value, ","), 4)).Value)
+                );
+                ClearCollect(
+                    colFile2Data,
+                    ForAll(
+                        Filter(
+                            colRows2,
+                            Trim(Last(FirstN(Split(Value, ","), 4)).Value) <> varHeader2ColD
+                            && Len(Trim(Last(FirstN(Split(Value, ","), 4)).Value)) > 0
+                        ),
+                        {
+                            GroupOrder: Trim(Last(FirstN(Split(Value, ","), 4)).Value),
+                            DateTime:   Trim(Last(FirstN(Split(Value, ","), 11)).Value),
+                            Source:     "File 2"
+                        }
+                    )
+                );
+                Set(varFile2RowCount, CountRows(colFile2Data));
+
+                // ── FIND MATCHES ─────────────────────────────────────────────────
+                // Unique group orders from File 1 that also appear in File 2
+                ClearCollect(
+                    colMatches,
+                    ForAll(
+                        Distinct(
+                            Filter(
+                                colFile1Data,
+                                GroupOrder in colFile2Data.GroupOrder
+                                && Len(GroupOrder) > 0
+                            ),
+                            GroupOrder
+                        ),
+                        With(
+                            {orderNum: Value},
+                            {
+                                GroupOrder:     orderNum,
+                                // All date-times from File 1 for this order (pipe-separated)
+                                File1DateTimes: Concat(
+                                    Filter(colFile1Data, GroupOrder = orderNum),
+                                    DateTime & " | "
+                                ),
+                                // All date-times from File 2 for this order
+                                File2DateTimes: Concat(
+                                    Filter(colFile2Data, GroupOrder = orderNum),
+                                    DateTime & " | "
+                                ),
+                                File1OccurrenceCount: CountIf(colFile1Data, GroupOrder = orderNum),
+                                File2OccurrenceCount: CountIf(colFile2Data, GroupOrder = orderNum)
+                            }
+                        )
+                    )
+                );
+
+                // ── Navigate or show "no match" message ──────────────────────────
+                Set(varProcessing, false);
+                If(
+                    CountRows(colMatches) = 0,
+                    Set(varStatusIsError, false);
+                    Set(varStatusMessage,
+                        "No matching group orders found. File 1: "
+                        & Text(varFile1RowCount) & " rows  |  File 2: "
+                        & Text(varFile2RowCount) & " rows"
+                    ),
+                    Navigate(ResultsScreen, ScreenTransition.Fade)
+                )
+            )

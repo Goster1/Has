@@ -1,0 +1,13 @@
+App:
+  OnStart: |-
+    =// ── Global Variables ──────────────────────────────────────────────────────
+    // Collections for parsed CSV data
+    ClearCollect(colFile1Data, []);
+    ClearCollect(colFile2Data, []);
+    ClearCollect(colMatches, []);
+    // UI state
+    Set(varStatusMessage, "Paste CSV content in both panels, then click 'Find Matching Orders'");
+    Set(varStatusIsError, false);
+    Set(varProcessing, false);
+    Set(varFile1RowCount, 0);
+    Set(varFile2RowCount, 0)
