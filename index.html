@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CSV Group Order Matcher</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary:       #0078d4;
+      --primary-dark:  #005a9e;
+      --primary-light: #e5f1fb;
+      --success:       #107c10;
+      --success-light: #dff6dd;
+      --error:         #a4262c;
+      --error-light:   #fde7e9;
+      --warning-light: #fff4ce;
+      --bg:            #f3f5f8;
+      --surface:       #ffffff;
+      --border:        #d0d8e4;
+      --text:          #1b1a19;
+      --text-muted:    #605e5c;
+      --shadow-sm:     0 1px 4px rgba(0,0,0,.08);
+      --shadow:        0 2px 12px rgba(0,0,0,.10);
+      --radius:        10px;
+      --radius-sm:     6px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    .header {
+      background: var(--primary);
+      color: #fff;
+      padding: 0 28px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: var(--shadow);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-icon { font-size: 24px; line-height: 1; }
+    .header h1  { font-size: 18px; font-weight: 700; }
+    .header p   { font-size: 11px; opacity: .75; margin-top: 1px; }
+
+    /* ── Layout ─────────────────────────────────────────────────────────── */
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+
+    .section { margin-bottom: 28px; }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .section-header h2 { font-size: 16px; font-weight: 700; }
+    .step-badge {
+      width: 26px; height: 26px;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--primary-light);
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    /* ── File cards grid ────────────────────────────────────────────────── */
+    .files-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .file-card {
+      background: var(--surface);
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: border-color .2s, background .2s, box-shadow .2s;
+      position: relative;
+      min-height: 140px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 8px;
+    }
+    .file-card:hover, .file-card.drag-over {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      box-shadow: var(--shadow-sm);
+    }
+    .file-card.loaded {
+      border-style: solid;
+      border-color: var(--success);
+      background: var(--success-light);
+      align-items: flex-start;
+      text-align: left;
+      cursor: default;
+    }
+    .file-card input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+    }
+    .file-card.loaded input[type="file"] { display: none; }
+
+    .upload-icon  { font-size: 32px; opacity: .45; }
+    .upload-label { font-size: 13px; color: var(--text-muted); }
+    .upload-sub   { font-size: 11px; color: var(--text-muted); opacity: .7; }
+
+    .card-badge {
+      font-size: 10px; font-weight: 700; letter-spacing: .5px;
+      background: var(--primary); color: #fff;
+      padding: 2px 8px; border-radius: 20px;
+      align-self: flex-start;
+    }
+    .file-card.loaded .card-badge { background: var(--success); }
+
+    .card-filename {
+      font-size: 13px; font-weight: 700;
+      word-break: break-all;
+      margin-top: 2px;
+    }
+    .card-stats {
+      font-size: 11px; color: var(--text-muted);
+      display: flex; gap: 12px; margin-top: 4px;
+    }
+    .card-stat span { font-weight: 700; color: var(--text); }
+
+    .card-preview {
+      font-size: 11px; color: var(--text-muted);
+      background: rgba(0,0,0,.04);
+      border-radius: var(--radius-sm);
+      padding: 6px 8px;
+      width: 100%;
+      margin-top: 6px;
+      max-height: 64px;
+      overflow: hidden;
+      line-height: 1.6;
+    }
+
+    .card-remove-btn {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(0,0,0,.06); border: none;
+      width: 22px; height: 22px; border-radius: 50%;
+      cursor: pointer; font-size: 12px; font-weight: 700;
+      color: var(--text-muted);
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .card-remove-btn:hover { background: var(--error-light); color: var(--error); }
+
+    /* ── Buttons ────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 9px 18px; border-radius: var(--radius-sm);
+      border: none; cursor: pointer;
+      font-size: 13px; font-weight: 600;
+      transition: background .15s, opacity .15s, box-shadow .15s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--primary); color: #fff;
+    }
+    .btn-primary:not(:disabled):hover { background: var(--primary-dark); }
+
+    .btn-secondary {
+      background: var(--surface); color: var(--primary);
+      border: 1.5px solid var(--primary);
+    }
+    .btn-secondary:hover { background: var(--primary-light); }
+
+    .btn-ghost {
+      background: transparent; color: var(--text-muted);
+      border: 1.5px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--bg); }
+
+    .btn-large { padding: 13px 32px; font-size: 15px; border-radius: var(--radius); }
+
+    .action-row {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .status-msg {
+      font-size: 13px; padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      flex: 1; min-width: 200px;
+    }
+    .status-msg.error   { background: var(--error-light);   color: var(--error);   }
+    .status-msg.success { background: var(--success-light); color: var(--success); }
+    .status-msg.info    { background: var(--primary-light); color: var(--primary); }
+
+    /* ── Results ────────────────────────────────────────────────────────── */
+    #resultsSection { display: none; }
+
+    .results-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px;
+      margin-bottom: 16px;
+    }
+    .results-title { display: flex; align-items: center; gap: 10px; }
+    .results-title h2 { font-size: 16px; font-weight: 700; }
+
+    .match-badge {
+      background: var(--success); color: #fff;
+      padding: 4px 14px; border-radius: 20px;
+      font-size: 12px; font-weight: 700;
+    }
+    .no-match-badge {
+      background: var(--error-light); color: var(--error);
+      padding: 4px 14px; border-radius: 20px;
+      font-size: 12px; font-weight: 700;
+    }
+
+    .results-stats {
+      display: flex; gap: 20px; flex-wrap: wrap;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      margin-bottom: 16px;
+    }
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat-value { font-size: 22px; font-weight: 800; color: var(--primary); }
+    .stat-label { font-size: 11px; color: var(--text-muted); }
+
+    /* Table */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: auto;
+      box-shadow: var(--shadow-sm);
+    }
+
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead tr {
+      background: var(--primary);
+      color: #fff;
+    }
+    thead th {
+      padding: 11px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: .3px;
+      white-space: nowrap;
+    }
+    thead th:first-child { border-radius: var(--radius) 0 0 0; }
+    thead th:last-child  { border-radius: 0 var(--radius) 0 0; }
+
+    tbody tr { transition: background .1s; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody tr:hover           { background: var(--primary-light); }
+
+    tbody td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+
+    .order-cell {
+      font-weight: 700; color: var(--primary);
+      font-size: 15px;
+    }
+    .datetime-list { display: flex; flex-direction: column; gap: 3px; }
+    .datetime-pill {
+      display: inline-block;
+      background: var(--primary-light);
+      color: var(--primary-dark);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .count-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 20px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .no-results {
+      text-align: center; padding: 48px 24px;
+      color: var(--text-muted);
+    }
+    .no-results .no-icon { font-size: 40px; margin-bottom: 12px; }
+    .no-results p { font-size: 15px; }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .container { padding: 16px 12px 40px; }
+      .header    { padding: 0 16px; height: 52px; }
+      .header h1 { font-size: 15px; }
+      .btn-large { width: 100%; justify-content: center; }
+      .results-stats { gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-icon">📊</div>
+  <div>
+    <h1>CSV Group Order Matcher</h1>
+    <p>Extract column D (Group Order) &amp; column K (Date/Time) · Find matches across files</p>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- ── Step 1: Upload ─────────────────────────────────────────────────── -->
+  <section class="section">
+    <div class="section-header">
+      <span class="step-badge">1</span>
+      <h2>Upload CSV Files</h2>
+      <span class="hint">Col D = Group Order &nbsp;·&nbsp; Col K = Date / Time</span>
+    </div>
+
+    <div class="files-grid" id="filesGrid"></div>
+
+    <button class="btn btn-secondary" id="addFileBtn">＋ Add Another File</button>
+  </section>
+
+  <!-- ── Step 2: Match ──────────────────────────────────────────────────── -->
+  <section class="section">
+    <div class="action-row">
+      <button class="btn btn-primary btn-large" id="findBtn" disabled>
+        🔍 Find Matching Orders
+      </button>
+      <div id="statusMsg" class="status-msg info" style="display:none"></div>
+    </div>
+  </section>
+
+  <!-- ── Results ───────────────────────────────────────────────────────── -->
+  <section class="section" id="resultsSection">
+    <div class="results-header">
+      <div class="results-title">
+        <span class="step-badge" style="background:var(--success)">✓</span>
+        <h2>Results</h2>
+        <span id="matchBadge"></span>
+      </div>
+      <button class="btn btn-ghost" id="exportBtn">⬇ Export CSV</button>
+    </div>
+
+    <div class="results-stats" id="statsBar"></div>
+    <div class="table-wrap"  id="tableWrap"></div>
+  </section>
+
+</main>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════
+   State
+════════════════════════════════════════════════════════════════════════ */
+let files   = [];   // [{ id, label, name, rows:[{groupOrder, dateTime}] }]
+let matches = [];   // [{ groupOrder, perFile:[{label,dateTimes:[]}] }]
+let nextId  = 1;
+
+/* ════════════════════════════════════════════════════════════════════════
+   CSV Parser  (handles quoted fields with embedded commas / newlines)
+════════════════════════════════════════════════════════════════════════ */
+function parseCSVRow(line) {
+  const cols = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (ch === ',' && !inQ) {
+      cols.push(cur.trim()); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cols.push(cur.trim());
+  return cols;
+}
+
+function parseCSV(text) {
+  const lines = text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .filter(l => l.trim().length > 0);
+
+  if (lines.length < 2) return [];
+
+  // Detect header: get column-D value from first row to skip it
+  const headerCols = parseCSVRow(lines[0]);
+  const headerColD = (headerCols[3] || '').trim();  // col D = index 3 (0-based)
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols      = parseCSVRow(lines[i]);
+    const groupOrder = (cols[3]  || '').trim();   // column D
+    const dateTime   = (cols[10] || '').trim();   // column K
+    if (groupOrder && groupOrder !== headerColD) {
+      rows.push({ groupOrder, dateTime });
+    }
+  }
+  return rows;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Matching logic
+   Finds group-order numbers present in AT LEAST 2 uploaded files.
+════════════════════════════════════════════════════════════════════════ */
+function findMatches(loadedFiles) {
+  // Build a map: groupOrder → [{ fileId, label, dateTimes[] }]
+  const orderMap = {};
+  loadedFiles.forEach(f => {
+    const seen = {};
+    f.rows.forEach(({ groupOrder, dateTime }) => {
+      if (!orderMap[groupOrder]) orderMap[groupOrder] = {};
+      if (!orderMap[groupOrder][f.id]) {
+        orderMap[groupOrder][f.id] = { label: f.label, dateTimes: [] };
+      }
+      if (!seen[f.id + '|' + dateTime]) {
+        orderMap[groupOrder][f.id].dateTimes.push(dateTime);
+        seen[f.id + '|' + dateTime] = true;
+      }
+    });
+  });
+
+  // Keep only orders found in 2+ files
+  return Object.entries(orderMap)
+    .filter(([, fileMap]) => Object.keys(fileMap).length >= 2)
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([groupOrder, fileMap]) => ({
+      groupOrder,
+      perFile: loadedFiles
+        .filter(f => fileMap[f.id])
+        .map(f => ({ label: f.label, dateTimes: fileMap[f.id].dateTimes }))
+    }));
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Render file cards
+════════════════════════════════════════════════════════════════════════ */
+function renderCards() {
+  const grid = document.getElementById('filesGrid');
+  grid.innerHTML = '';
+
+  files.forEach(f => {
+    const card = document.createElement('div');
+    card.className = 'file-card' + (f.rows ? ' loaded' : '');
+    card.dataset.id = f.id;
+
+    if (f.rows) {
+      // Loaded state
+      const preview = f.rows.slice(0, 3)
+        .map(r => `<b>${r.groupOrder}</b> — ${r.dateTime || '—'}`)
+        .join('<br>');
+      card.innerHTML = `
+        <span class="card-badge">FILE ${f.label}</span>
+        <div class="card-filename">${escHtml(f.name)}</div>
+        <div class="card-stats">
+          <div><span>${f.rows.length}</span> data rows</div>
+          <div><span>${new Set(f.rows.map(r => r.groupOrder)).size}</span> unique orders</div>
+        </div>
+        <div class="card-preview">${preview}${f.rows.length > 3 ? '<br>…' : ''}</div>
+        <button class="card-remove-btn" data-id="${f.id}" title="Remove file">✕</button>
+      `;
+    } else {
+      // Empty state — clickable upload zone
+      card.innerHTML = `
+        <input type="file" accept=".csv,.txt" data-id="${f.id}" />
+        <div class="upload-icon">📂</div>
+        <div class="upload-label"><b>FILE ${f.label}</b></div>
+        <div class="upload-sub">Click or drag &amp; drop a CSV file</div>
+        ${files.length > 2
+          ? `<button class="card-remove-btn" data-id="${f.id}" title="Remove slot">✕</button>`
+          : ''}
+      `;
+    }
+
+    grid.appendChild(card);
+  });
+
+  // Attach drag-and-drop + file input listeners
+  grid.querySelectorAll('input[type="file"]').forEach(input => {
+    input.addEventListener('change', e => loadFile(e.target.dataset.id, e.target.files[0]));
+  });
+  grid.querySelectorAll('.card-remove-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      removeFile(btn.dataset.id);
+    });
+  });
+  grid.querySelectorAll('.file-card:not(.loaded)').forEach(card => {
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', ()  => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) loadFile(card.dataset.id, file);
+    });
+  });
+
+  updateFindBtn();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   File loading
+════════════════════════════════════════════════════════════════════════ */
+function loadFile(id, file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const rows = parseCSV(e.target.result);
+    const entry = files.find(f => String(f.id) === String(id));
+    if (entry) {
+      entry.name = file.name;
+      entry.rows = rows;
+      renderCards();
+      showStatus(
+        `"${file.name}" loaded — ${rows.length} data rows extracted.`,
+        'success'
+      );
+    }
+  };
+  reader.readAsText(file);
+}
+
+function removeFile(id) {
+  const entry = files.find(f => String(f.id) === String(id));
+  if (!entry) return;
+  if (entry.rows) {
+    // Just clear the data, keep the slot
+    entry.name = null;
+    entry.rows = null;
+  } else if (files.length > 2) {
+    files = files.filter(f => String(f.id) !== String(id));
+    relabelFiles();
+  }
+  renderCards();
+  hideResults();
+}
+
+function relabelFiles() {
+  files.forEach((f, i) => { f.label = i + 1; });
+}
+
+function addSlot() {
+  files.push({ id: nextId++, label: files.length + 1, name: null, rows: null });
+  renderCards();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Find matches
+════════════════════════════════════════════════════════════════════════ */
+function runMatch() {
+  const loaded = files.filter(f => f.rows && f.rows.length > 0);
+  if (loaded.length < 2) {
+    showStatus('Please upload at least 2 CSV files before searching.', 'error');
+    return;
+  }
+
+  matches = findMatches(loaded);
+  renderResults(loaded);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Render results
+════════════════════════════════════════════════════════════════════════ */
+function renderResults(loadedFiles) {
+  const sec   = document.getElementById('resultsSection');
+  const badge = document.getElementById('matchBadge');
+  const stats = document.getElementById('statsBar');
+  const wrap  = document.getElementById('tableWrap');
+
+  sec.style.display = 'block';
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Badge
+  badge.className   = matches.length ? 'match-badge' : 'no-match-badge';
+  badge.textContent = matches.length
+    ? `${matches.length} match${matches.length !== 1 ? 'es' : ''} found`
+    : 'No matches found';
+
+  // Stats
+  const totalOrders = [...new Set(loadedFiles.flatMap(f => f.rows.map(r => r.groupOrder)))].length;
+  stats.innerHTML = `
+    <div class="stat"><span class="stat-value">${loadedFiles.length}</span><span class="stat-label">Files loaded</span></div>
+    <div class="stat"><span class="stat-value">${loadedFiles.reduce((s, f) => s + f.rows.length, 0)}</span><span class="stat-label">Total data rows</span></div>
+    <div class="stat"><span class="stat-value">${totalOrders}</span><span class="stat-label">Unique orders total</span></div>
+    <div class="stat"><span class="stat-value" style="color:var(--success)">${matches.length}</span><span class="stat-label">Matched orders (2+ files)</span></div>
+  `;
+
+  // Table
+  if (matches.length === 0) {
+    wrap.innerHTML = `
+      <div class="no-results">
+        <div class="no-icon">🔍</div>
+        <p>No group-order numbers were found in more than one file.</p>
+      </div>`;
+    return;
+  }
+
+  // Dynamic column headers for each file
+  const fileHeaders = loadedFiles.map(f =>
+    `<th>File ${f.label} — Date/Time (Col K)<br><small style="opacity:.7;font-weight:400">${escHtml(f.name)}</small></th>`
+  ).join('');
+
+  const rows = matches.map((m, idx) => {
+    const fileCells = loadedFiles.map(f => {
+      const pf = m.perFile.find(p => p.label === f.label);
+      if (!pf) return '<td><span style="color:var(--text-muted)">—</span></td>';
+      const pills = pf.dateTimes
+        .map(dt => `<span class="datetime-pill">${escHtml(dt) || '(empty)'}</span>`)
+        .join('');
+      return `<td><div class="datetime-list">${pills}</div></td>`;
+    }).join('');
+
+    const filesMatched = m.perFile.length;
+    return `
+      <tr>
+        <td style="text-align:center;color:var(--text-muted);font-size:12px">${idx + 1}</td>
+        <td class="order-cell">${escHtml(m.groupOrder)}</td>
+        <td style="text-align:center"><span class="count-pill">${filesMatched}/${loadedFiles.length}</span></td>
+        ${fileCells}
+      </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th style="width:44px">#</th>
+          <th>Group Order (Col D)</th>
+          <th style="width:80px;text-align:center">In Files</th>
+          ${fileHeaders}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  showStatus(`Done — ${matches.length} matching group order(s) found across ${loadedFiles.length} files.`, 'success');
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Export results to CSV
+════════════════════════════════════════════════════════════════════════ */
+function exportCSV() {
+  if (!matches.length) return;
+  const loadedFiles = files.filter(f => f.rows && f.rows.length > 0);
+
+  const headers = ['GroupOrder', ...loadedFiles.map(f => `File${f.label}_DateTimes(${f.name})`), 'MatchedFileCount'];
+  const csvRows = matches.map(m => {
+    const fileCols = loadedFiles.map(f => {
+      const pf = m.perFile.find(p => p.label === f.label);
+      return pf ? pf.dateTimes.join(' | ') : '';
+    });
+    return [m.groupOrder, ...fileCols, m.perFile.length].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+  });
+
+  const blob = new Blob([headers.join(',') + '\n' + csvRows.join('\n')], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'matched_group_orders.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Helpers
+════════════════════════════════════════════════════════════════════════ */
+function updateFindBtn() {
+  const loaded = files.filter(f => f.rows && f.rows.length > 0).length;
+  document.getElementById('findBtn').disabled = loaded < 2;
+}
+
+function showStatus(msg, type) {
+  const el = document.getElementById('statusMsg');
+  el.textContent  = msg;
+  el.className    = `status-msg ${type}`;
+  el.style.display = 'block';
+}
+
+function hideResults() {
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('statusMsg').style.display = 'none';
+  matches = [];
+}
+
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Bootstrap
+════════════════════════════════════════════════════════════════════════ */
+files = [
+  { id: nextId++, label: 1, name: null, rows: null },
+  { id: nextId++, label: 2, name: null, rows: null }
+];
+renderCards();
+
+document.getElementById('addFileBtn').addEventListener('click', addSlot);
+document.getElementById('findBtn').addEventListener('click', runMatch);
+document.getElementById('exportBtn').addEventListener('click', exportCSV);
+</script>
+</body>
+</html>
